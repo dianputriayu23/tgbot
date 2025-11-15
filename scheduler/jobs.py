@@ -58,11 +58,49 @@ async def send_evening_notification(db: Database, bot):
     except Exception as e:
         logging.error(f"Error in evening notification job: {e}")
 
+async def send_change_notification(db: Database, bot, changed_groups):
+    """Send notification to users when their schedule changes"""
+    if not changed_groups:
+        return
+    
+    try:
+        for group_name in changed_groups:
+            users = await db.get_users_by_group(group_name)
+            if not users:
+                continue
+            
+            message = f"⚠️ <b>Внимание!</b>\n\nВ расписании группы <b>{group_name}</b> произошли изменения.\n\nПроверьте актуальное расписание на сайте pkeu.ru или используйте кнопки бота."
+            
+            for user_tuple in users:
+                user_id = user_tuple[0]
+                try:
+                    await bot.send_message(user_id, message)
+                    logging.info(f"Sent change notification to user {user_id} for group {group_name}")
+                except Exception as e:
+                    logging.error(f"Error sending change notification to user {user_id}: {e}")
+    except Exception as e:
+        logging.error(f"Error in change notification: {e}")
+
 def setup_scheduler(db: Database, bot=None):
     scheduler = AsyncIOScheduler(timezone="Asia/Yekaterinburg")
     
     # Check for new schedule every 30 minutes
-    scheduler.add_job(run_initial_parsing, 'interval', minutes=30, args=(db,), name="Schedule Check")
+    if bot:
+        scheduler.add_job(
+            run_initial_parsing, 
+            'interval', 
+            minutes=30, 
+            args=(db, bot), 
+            name="Schedule Check"
+        )
+    else:
+        scheduler.add_job(
+            run_initial_parsing, 
+            'interval', 
+            minutes=30, 
+            args=(db,), 
+            name="Schedule Check"
+        )
     
     # Morning notifications
     if bot:

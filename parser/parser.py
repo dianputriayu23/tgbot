@@ -30,7 +30,8 @@ async def cleanup_old_files():
                 except Exception as e:
                     logging.error(f"[CLEANUP] Error deleting file {filename}: {e}")
 
-async def run_initial_parsing(db: Database):
+async def run_initial_parsing(db: Database, bot=None):
+    """Parse schedule and notify users of changes"""
     logging.info("[SCHEDULER] Starting scheduled check for a new schedule file...")
     await cleanup_old_files()
     file_path, file_hash = await download_latest_schedule_file()
@@ -38,8 +39,15 @@ async def run_initial_parsing(db: Database):
         existing_hash = await db.get_schedule_hash(file_hash)
         if not existing_hash:
             logging.info("[SCHEDULER] New schedule file detected. Starting parser.")
-            await parse_schedule(file_path, file_hash, db)
+            from parser.parser import parse_schedule
+            changed_groups = await parse_schedule(file_path, file_hash, db)
             logging.info("[SCHEDULER] Update complete.")
+            
+            # Send change notifications if bot is available
+            if bot and changed_groups:
+                from scheduler.jobs import send_change_notification
+                await send_change_notification(db, bot, changed_groups)
+                logging.info(f"[SCHEDULER] Sent change notifications for {len(changed_groups)} groups")
         else:
             logging.info("[SCHEDULER] No new schedule files found.")
     else:
@@ -208,8 +216,55 @@ async def parse_schedule(file_path, file_hash, db: Database):
                         })
     
     if all_lessons:
+        # Check for changes before clearing old schedule
+        changed_groups = await detect_schedule_changes(db, all_lessons)
+        
         await db.clear_schedule_for_new_parse(file_hash)
         await db.save_schedule(all_lessons)
         logging.info(f"PARSING FINAL RESULT: SUCCESS! Total lessons found and saved: {len(all_lessons)}")
+        
+        # Return changed groups for notification
+        return changed_groups
     else:
         logging.warning("PARSING FINAL RESULT: ATTENTION! No lessons found in the entire file.")
+        return []
+
+async def detect_schedule_changes(db: Database, new_lessons):
+    """
+    Detect which groups have schedule changes
+    Returns list of group names with changes
+    """
+    changed_groups = set()
+    
+    # Group new lessons by group_name
+    new_by_group = {}
+    for lesson in new_lessons:
+        group = lesson['group_name']
+        if group not in new_by_group:
+            new_by_group[group] = []
+        new_by_group[group].append(lesson)
+    
+    # Check each group for changes
+    for group_name, new_group_lessons in new_by_group.items():
+        # Get old schedule for this group
+        old_lessons = []
+        for day in ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота"]:
+            day_lessons = await db.get_schedule_for_group(group_name, day)
+            if day_lessons:
+                old_lessons.extend(day_lessons)
+        
+        # If there's old schedule, compare
+        if old_lessons:
+            # Simple comparison: check if lesson counts differ or content differs
+            if len(old_lessons) != len(new_group_lessons):
+                changed_groups.add(group_name)
+                continue
+            
+            # More detailed comparison - check subjects, times, teachers
+            old_set = {(l[2], l[4], l[7]) for l in old_lessons}  # day, lesson_number, subject
+            new_set = {(l['day_of_week'], l['lesson_number'], l['subject']) for l in new_group_lessons}
+            
+            if old_set != new_set:
+                changed_groups.add(group_name)
+    
+    return list(changed_groups)

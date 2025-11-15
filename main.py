@@ -27,7 +27,7 @@ async def main():
     logging.info("Command handlers registered.")
     
     logging.info("Performing initial schedule check on startup...")
-    await run_initial_parsing(db)
+    await run_initial_parsing(db, bot)
     logging.info("Initial check complete.")
 
     scheduler = setup_scheduler(db, bot)
