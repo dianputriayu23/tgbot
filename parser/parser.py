@@ -7,10 +7,11 @@ import zipfile
 import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 from database.db import Database
+import config
 
-SCHEDULE_URL = "https://pkeu.ru/raspisanie-zanyatiy"
-BASE_URL = "https://pkeu.ru"
-DOWNLOADS_DIR = "downloads"
+SCHEDULE_URL = config.SCHEDULE_URL
+BASE_URL = config.BASE_URL
+DOWNLOADS_DIR = config.DOWNLOADS_DIR
 
 async def run_initial_parsing(db: Database):
     """Initial parsing without notifications"""

@@ -6,18 +6,19 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
 
+import config
 from database.db import Database
 from handlers import common, schedule_viewer
 from scheduler.jobs import setup_scheduler
 from parser.parser import run_initial_parsing
 
 async def main():
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+    logging.basicConfig(level=config.LOG_LEVEL, format=config.LOG_FORMAT)
     load_dotenv()
 
     bot = Bot(token=os.getenv("API_TOKEN"), default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher(storage=MemoryStorage())
-    db = Database('schedule.db')
+    db = Database(config.DATABASE_NAME)
 
     await db.initialize()
     logging.info("Database initialized.")

@@ -4,6 +4,7 @@ from database.db import Database
 from parser.parser import run_initial_parsing, check_and_notify_schedule_changes
 from notifications import NotificationService
 from aiogram import Bot
+import config
 
 def setup_scheduler(db: Database, bot: Bot = None):
     """
@@ -13,29 +14,30 @@ def setup_scheduler(db: Database, bot: Bot = None):
         db: Database instance
         bot: Bot instance (optional, required for notifications)
     """
-    scheduler = AsyncIOScheduler(timezone="Asia/Yekaterinburg")
+    scheduler = AsyncIOScheduler(timezone=config.TIMEZONE)
     
-    # Check for schedule updates every 30 minutes
+    # Check for schedule updates every configured minutes
     scheduler.add_job(
         check_and_notify_schedule_changes, 
         'interval', 
-        minutes=30, 
+        minutes=config.SCHEDULE_CHECK_INTERVAL_MINUTES, 
         args=(db, bot), 
         name="Schedule Check and Notify"
     )
     
-    # Send morning reminders at 7:30 AM
+    # Send morning reminders at configured time
     if bot:
         notification_service = NotificationService(db, bot)
+        hour, minute = map(int, config.DEFAULT_MORNING_REMINDER_TIME.split(':'))
         scheduler.add_job(
             send_morning_reminders,
             'cron',
-            hour=7,
-            minute=30,
+            hour=hour,
+            minute=minute,
             args=(db, notification_service),
             name="Morning Reminders"
         )
-        logging.info("Morning reminder scheduler configured for 07:30")
+        logging.info(f"Morning reminder scheduler configured for {config.DEFAULT_MORNING_REMINDER_TIME}")
     
     logging.info("Scheduler has been configured.")
     return scheduler
