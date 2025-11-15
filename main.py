@@ -30,7 +30,7 @@ async def main():
     await run_initial_parsing(db)
     logging.info("Initial check complete.")
 
-    scheduler = setup_scheduler(db)
+    scheduler = setup_scheduler(db, bot)
     scheduler.start()
     logging.info("Scheduler has been started.")
 

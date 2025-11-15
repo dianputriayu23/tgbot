@@ -13,6 +13,7 @@ BASE_URL = "https://pkeu.ru"
 DOWNLOADS_DIR = "downloads"
 
 async def run_initial_parsing(db: Database):
+    """Initial parsing without notifications"""
     logging.info("[SCHEDULER] Starting scheduled check for a new schedule file...")
     file_path, file_hash = await download_latest_schedule_file()
     if file_path and file_hash:
@@ -23,6 +24,40 @@ async def run_initial_parsing(db: Database):
             logging.info("[SCHEDULER] Update complete.")
         else:
             logging.info("[SCHEDULER] No new schedule files found.")
+
+async def check_and_notify_schedule_changes(db: Database, bot=None):
+    """Check for schedule changes and notify users if bot is provided"""
+    logging.info("[SCHEDULER] Starting scheduled check for a new schedule file...")
+    file_path, file_hash = await download_latest_schedule_file()
+    
+    if file_path and file_hash:
+        existing_hash = await db.get_schedule_hash(file_hash)
+        if not existing_hash:
+            logging.info("[SCHEDULER] New schedule file detected. Starting parser.")
+            
+            # Get groups before update to know which groups were affected
+            old_groups = await db.get_all_groups()
+            
+            await parse_schedule(file_path, file_hash, db)
+            
+            # Get new groups after update
+            new_groups = await db.get_all_groups()
+            
+            # Notify users if bot is available
+            if bot:
+                from notifications import NotificationService
+                notification_service = NotificationService(db, bot)
+                
+                # Notify about changes to all groups (both old and new)
+                affected_groups = list(set(old_groups + new_groups))
+                await notification_service.notify_all_users_about_changes(affected_groups)
+                logging.info("[SCHEDULER] Users notified about schedule changes.")
+            
+            logging.info("[SCHEDULER] Update complete.")
+        else:
+            logging.info("[SCHEDULER] No new schedule files found.")
+    else:
+        logging.warning("[SCHEDULER] Failed to download schedule file.")
 
 def clean_value(value):
     if value is None: return ""
