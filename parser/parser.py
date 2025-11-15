@@ -130,65 +130,125 @@ class ScheduleParser:
         group_columns = {}
         date_column = None
         day_column = None
+        pair_column = None
         
-        # Search for column headers (groups, dates, days)
-        for row_idx, row in enumerate(data[:20]):  # Check first 20 rows
+        # Search for the row with individual group names (around row 13-14, 0-indexed)
+        # This row has one group per column
+        group_row_idx = None
+        for row_idx in range(10, min(20, len(data))):
+            row = data[row_idx]
+            found_groups_in_row = 0
+            temp_groups = {}
+            
             for col_idx, cell in enumerate(row):
                 if cell and isinstance(cell, str):
                     cell_str = str(cell).strip()
                     
-                    # Check for date column
-                    if 'дата' in cell_str.lower() or 'число' in cell_str.lower():
-                        date_column = col_idx
+                    # Check for "Пара" column
+                    if 'пара' in cell_str.lower() and len(cell_str) < 10:
+                        pair_column = col_idx
                     
-                    # Check for day of week column
-                    if 'день' in cell_str.lower():
-                        day_column = col_idx
+                    # Look for individual group names (not lists)
+                    match = re.match(r'^([А-ЯA-Z]{1,3}\d*-\d{2,3})$', cell_str)
+                    if match:
+                        temp_groups[col_idx] = match.group(1)
+                        found_groups_in_row += 1
+            
+            # If we found several groups in this row, use it
+            if found_groups_in_row >= 3:
+                group_columns = temp_groups
+                group_row_idx = row_idx
+                logger.info(f"Found {len(group_columns)} groups in row {row_idx + 1}")
+                break
+        
+        # Find date and day columns - look specifically in rows after the group header
+        for row_idx in range(13, min(20, len(data))):  # Start from row after group names
+            row = data[row_idx]
+            for col_idx in range(min(12, len(row))):
+                cell = row[col_idx] if col_idx < len(row) else None
+                if not cell:
+                    continue
                     
-                    # Check for group names (like А-211, Б-311, etc.)
-                    if re.match(r'^[А-Я]-\d{3}', cell_str):
-                        group_columns[col_idx] = cell_str
+                cell_str = str(cell).strip().lower()
+                
+                # Check for day of week
+                day_match = False
+                for day in ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота']:
+                    if day == cell_str or day in cell_str:
+                        if day_column is None:
+                            day_column = col_idx
+                            logger.info(f"Found day column at {col_idx}, value: {cell}")
+                            day_match = True
+                            break
+                
+                # If we found day, next column should be date
+                if day_match and col_idx + 1 < len(row):
+                    next_cell = row[col_idx + 1]
+                    if next_cell and (hasattr(next_cell, 'strftime') or '2025' in str(next_cell) or '2024' in str(next_cell)):
+                        date_column = col_idx + 1
+                        logger.info(f"Found date column at {date_column}, value: {next_cell}")
+                        break
+            
+            if day_column is not None and date_column is not None:
+                # Pair column should be right after date column
+                if pair_column is None:
+                    pair_column = date_column + 1
+                    logger.info(f"Setting pair column to {pair_column}")
+                break
         
         if not group_columns:
             logger.warning(f"No groups found in sheet for base {base}, course {course}")
             return schedule_entries
         
-        # Parse schedule data
+        logger.info(f"Found groups: {list(group_columns.values())}")
+        logger.info(f"Day column: {day_column}, Date column: {date_column}, Pair column: {pair_column}")
+        
+        # Parse schedule data - start from the row after we found groups
         current_date = None
         current_day = None
         
-        for row_idx, row in enumerate(data):
-            if row_idx < 10:  # Skip header rows
-                continue
+        # Start from the row after group names
+        start_row = (group_row_idx + 1) if group_row_idx is not None else 13
+        
+        for row_idx in range(start_row, len(data)):
+            row = data[row_idx]
             
             # Get date and day
-            if date_column is not None and len(row) > date_column:
-                date_val = row[date_column]
-                if date_val and str(date_val).strip():
-                    current_date = self._parse_date(date_val)
-            
-            if day_column is not None and len(row) > day_column:
+            if day_column is not None and day_column < len(row):
                 day_val = row[day_column]
                 if day_val and isinstance(day_val, str):
-                    current_day = day_val.strip()
+                    day_str = str(day_val).strip().lower()
+                    if any(d in day_str for d in ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота']):
+                        current_day = day_val.strip()
+            
+            if date_column is not None and date_column < len(row):
+                date_val = row[date_column]
+                if date_val and str(date_val).strip():
+                    parsed_date = self._parse_date(date_val)
+                    if parsed_date:
+                        current_date = parsed_date
             
             if not current_date:
                 continue
             
-            # Check for lesson number in first columns
+            # Check for lesson number
             lesson_number = None
-            for i in range(min(5, len(row))):
-                cell = row[i]
+            
+            # Check pair column
+            if pair_column is not None and pair_column < len(row):
+                cell = row[pair_column]
                 if cell and isinstance(cell, str):
                     cell_str = str(cell).strip()
-                    if cell_str in self.LESSON_NUMBERS:
-                        lesson_number = self.LESSON_NUMBERS[cell_str]
-                        break
-                    # Also check for Roman numerals
-                    match = re.match(r'^(III|IV|V|VI|VII)$', cell_str)
+                    # Look for Roman numerals
+                    match = re.search(r'(I{1,3}|IV|V|VI|VII)\s*пара', cell_str)
                     if match:
-                        lesson_number = self.LESSON_NUMBERS[match.group(1)]
-                        break
+                        roman = match.group(1)
+                        if roman == 'I':
+                            lesson_number = 1
+                        elif roman == 'II':
+                            lesson_number = 2
+                        elif roman in self.LESSON_NUMBERS:
+                            lesson_number = self.LESSON_NUMBERS[roman]
             
             if lesson_number is None:
                 continue
@@ -198,29 +258,25 @@ class ScheduleParser:
                 if col_idx >= len(row):
                     continue
                 
-                # Get subject, teacher, and room (usually in consecutive rows or same cell)
+                # Get subject
                 subject = None
-                teacher = None
                 room = None
                 
                 cell_value = row[col_idx]
                 if cell_value:
                     cell_str = str(cell_value).strip()
-                    if cell_str and cell_str != 'nan':
-                        # Try to extract subject, teacher, and room
-                        lines = cell_str.split('\n')
-                        if len(lines) >= 1:
-                            subject = lines[0].strip()
-                        if len(lines) >= 2:
-                            teacher = lines[1].strip()
-                        if len(lines) >= 3:
-                            room = lines[2].strip()
-                        
-                        # If not multiline, just use as subject
-                        if len(lines) == 1:
-                            subject = cell_str
+                    if cell_str and cell_str not in ['nan', 'None', '', 'ауд.', 'ауд']:
+                        subject = cell_str
                 
-                # Only add if there's actual content
+                # Get room (next column after subject)
+                if col_idx + 1 < len(row):
+                    room_value = row[col_idx + 1]
+                    if room_value:
+                        room_str = str(room_value).strip()
+                        if room_str and room_str not in ['nan', 'None', '', 'ауд.', 'ауд']:
+                            room = room_str
+                
+                # Only add if there's a subject
                 if subject:
                     schedule_entries.append({
                         'group_name': group_name,
@@ -230,7 +286,7 @@ class ScheduleParser:
                         'day_of_week': current_day or '',
                         'lesson_number': lesson_number,
                         'subject': subject,
-                        'teacher': teacher,
+                        'teacher': None,  # Teacher info usually in next row
                         'room': room
                     })
         
