@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+venv/
+env/
+ENV/
+test_venv/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Downloads
+downloads/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment variables
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.rar
+*.zip
+dist/
+build/
+*.egg-info/
