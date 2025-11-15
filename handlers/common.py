@@ -116,8 +116,11 @@ async def cq_choose_group(callback: CallbackQuery, state: FSMContext, db: Databa
             year_from_group = int(match.group(1))
             group_course = current_year_short - year_from_group + (1 if datetime.now().month >= 9 else 0)
 
-            is_9_classes_format = bool(re.search(r'^[А-Яа-я]+[1-9]', group))
-            is_11_classes_format = bool(re.search(r'^[А-Яа-я]+-', group))
+            # Определение формата группы (9 или 11 классов)
+            # 9 классов: Б1-24, Ю1-24, ТД1-24 (буквы + цифра + дефис + год)
+            # 11 классов: БУ-25, Ф-25, ТД-25 (буквы + дефис + год БЕЗ цифры перед дефисом)
+            is_9_classes_format = bool(re.search(r'^[А-Яа-я]+\d+-', group))
+            is_11_classes_format = bool(re.search(r'^[А-Яа-я]+-\d{2}', group)) and not is_9_classes_format
             
             if education_form == '9_classes' and is_9_classes_format and group_course == course: final_groups.append(group)
             elif education_form == '11_classes' and is_11_classes_format and group_course == course: final_groups.append(group)

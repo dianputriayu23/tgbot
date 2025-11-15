@@ -8,7 +8,8 @@ def get_education_form_kb():
 
 def get_course_kb(education_form):
     builder = InlineKeyboardBuilder()
-    courses = range(1, 5) if education_form == '9_classes' else range(1, 4)
+    # 9 classes: courses 1-4, 11 classes: courses 1-3
+    courses = range(1, 5) if education_form == '9_classes' else range(1, 3)
     for course in courses:
         builder.button(text=f"{course} курс", callback_data=f"register:course:{course}")
     builder.button(text="« Назад", callback_data="register_start")
